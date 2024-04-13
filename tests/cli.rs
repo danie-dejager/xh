@@ -13,6 +13,7 @@ use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use assert_cmd::cmd::Command;
+use http_body_util::BodyExt;
 use indoc::indoc;
 use predicates::function::function;
 use predicates::str::contains;
@@ -26,7 +27,7 @@ pub trait RequestExt {
 
 impl<T> RequestExt for hyper::Request<T>
 where
-    T: hyper::body::HttpBody + Send + 'static,
+    T: hyper::body::Body + Send + 'static,
     T::Data: Send,
     T::Error: std::fmt::Debug,
 {
@@ -37,13 +38,7 @@ where
     }
 
     fn body(self) -> Pin<Box<dyn Future<Output = Vec<u8>> + Send>> {
-        let fut = async {
-            hyper::body::to_bytes(self)
-                .await
-                .unwrap()
-                .as_ref()
-                .to_owned()
-        };
+        let fut = async { self.collect().await.unwrap().to_bytes().to_vec() };
         Box::pin(fut)
     }
 
@@ -155,6 +150,44 @@ fn basic_json_post() {
 
         "#});
 }
+#[test]
+fn full_json_response_utf8_decode() {
+    let server = server::http(|_| async move {
+        hyper::Response::builder()
+            .header(hyper::header::CONTENT_TYPE, "application/json")
+            .body(r#"{"hello": "\u4f60\u597d"}"#.into())
+            .unwrap()
+    });
+
+    get_command()
+        .arg("--print=b")
+        .arg("-S")
+        .arg("--pretty=format")
+        .arg("post")
+        .arg(server.base_url())
+        .assert()
+        .stdout(indoc! {r#"
+            {
+                "hello": "\u4f60\u597d"
+            }
+
+
+        "#});
+
+    get_command()
+        .arg("--print=b")
+        .arg("--pretty=format")
+        .arg("post")
+        .arg(server.base_url())
+        .assert()
+        .stdout(indoc! {r#"
+            {
+                "hello": "你好"
+            }
+
+
+        "#});
+}
 
 #[test]
 fn basic_get() {
@@ -206,6 +239,21 @@ fn multiline_value() {
 
     get_command()
         .args(["--form", "post", &server.base_url(), "foo=bar\nbaz"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn post_empty_body() {
+    let server = server::http(|req| async move {
+        assert_eq!(req.method(), "POST");
+        assert_eq!(req.headers().get(reqwest::header::TRANSFER_ENCODING), None);
+        assert_eq!(req.body_as_string().await, "");
+        hyper::Response::default()
+    });
+
+    get_command()
+        .args(["post", &server.base_url()])
         .assert()
         .success();
 }
@@ -1698,6 +1746,7 @@ fn multipart_file_upload() {
     let filename = dir.path().join("input.txt");
     OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .open(&filename)
         .unwrap()
@@ -1728,6 +1777,7 @@ fn body_from_file() {
     let filename = dir.path().join("input.txt");
     OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .open(&filename)
         .unwrap()
@@ -1753,6 +1803,7 @@ fn body_from_file_with_explicit_mimetype() {
     let filename = dir.path().join("input.txt");
     OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .open(&filename)
         .unwrap()
@@ -1778,6 +1829,7 @@ fn body_from_file_with_fallback_mimetype() {
     let filename = dir.path().join("input");
     OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .open(&filename)
         .unwrap()
@@ -1806,6 +1858,7 @@ fn print_body_from_file() {
     let filename = dir.path().join("input");
     OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .open(&filename)
         .unwrap()
@@ -3051,6 +3104,32 @@ fn http2() {
         .success()
         .stdout(contains("GET / HTTP/2.0"))
         .stdout(contains("HTTP/2.0 200 OK"));
+}
+
+#[test]
+fn http2_prior_knowledge() {
+    let server = server::http(|_req| async move {
+        hyper::Response::builder()
+            .body("Hello HTTP/2.0".into())
+            .unwrap()
+    });
+    get_command()
+        .arg("-v")
+        .arg("--http-version=2")
+        .arg(server.base_url())
+        .assert()
+        .failure()
+        .stderr(contains("UserUnsupportedVersion"));
+
+    get_command()
+        .arg("-v")
+        .arg("--http-version=2-prior-knowledge")
+        .arg(server.base_url())
+        .assert()
+        .success()
+        .stdout(contains("GET / HTTP/2.0"))
+        .stdout(contains("HTTP/2.0 200"))
+        .stdout(contains("Hello HTTP/2.0"));
 }
 
 #[test]
