@@ -1,6 +1,6 @@
 %define name xh
 %define version 0.22.0
-%define release 1%{?dist}
+%define release 2%{?dist}
 
 Summary:  Friendly and fast tool for sending HTTP requests
 Name:     %{name}
@@ -60,6 +60,7 @@ install -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 %{_mandir}/man1/%{name}.1.gz
 
 %changelog
-* Sat Apr 13 2024 - Danie de Jager - 0.22.0
-* Tue Feb 27 2024 - Danie de Jager - 0.21.0
+* Fri Apr 26 2024 - Danie de Jager - 0.22.0-2
+* Sat Apr 13 2024 - Danie de Jager - 0.22.0-1
+* Tue Feb 27 2024 - Danie de Jager - 0.21.0-1
 - Initial RPM build
