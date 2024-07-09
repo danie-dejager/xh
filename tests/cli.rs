@@ -1,5 +1,6 @@
 #![allow(clippy::bool_assert_comparison)]
 
+mod cases;
 mod server;
 
 use std::collections::{HashMap, HashSet};
@@ -121,6 +122,18 @@ const BINARY_SUPPRESSOR: &str = concat!(
     "+-----------------------------------------+\n",
     "\n"
 );
+
+#[allow(unused)]
+mod prelude {
+    pub(crate) use super::color_command;
+    pub(crate) use super::get_base_command;
+    pub(crate) use super::get_command;
+    pub(crate) use super::random_string;
+    pub(crate) use super::redirecting_command;
+    pub(crate) use super::server;
+    pub(crate) use super::RequestExt;
+    pub(crate) use super::BINARY_SUPPRESSOR;
+}
 
 #[test]
 fn basic_json_post() {
@@ -418,7 +431,7 @@ fn verbose() {
         .stdout(indoc! {r#"
             POST / HTTP/1.1
             Accept: application/json, */*;q=0.5
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Connection: keep-alive
             Content-Length: 9
             Content-Type: application/json
@@ -531,6 +544,27 @@ fn download_supplied_filename() {
 }
 
 #[test]
+fn download_supplied_unicode_filename() {
+    let dir = tempdir().unwrap();
+    let server = server::http(|_req| async move {
+        hyper::Response::builder()
+            .header("Content-Disposition", r#"attachment; filename="😀.bar""#)
+            .body("file".into())
+            .unwrap()
+    });
+
+    get_command()
+        .args(["--download", &server.base_url()])
+        .current_dir(&dir)
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("😀.bar")).unwrap(),
+        "file"
+    );
+}
+
+#[test]
 fn download_supplied_unquoted_filename() {
     let dir = tempdir().unwrap();
     let server = server::http(|_req| async move {
@@ -549,6 +583,49 @@ fn download_supplied_unquoted_filename() {
         fs::read_to_string(dir.path().join("foo bar baz")).unwrap(),
         "file"
     );
+}
+
+#[test]
+fn download_filename_with_directory_traversal() {
+    let dir = tempdir().unwrap();
+    let server = server::http(|_req| async move {
+        hyper::Response::builder()
+            .header(
+                "Content-Disposition",
+                r#"attachment; filename="foo/baz/bar""#,
+            )
+            .body("file".into())
+            .unwrap()
+    });
+
+    get_command()
+        .args(["--download", &server.base_url()])
+        .current_dir(&dir)
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(dir.path().join("bar")).unwrap(), "file");
+}
+
+#[cfg(windows)]
+#[test]
+fn download_filename_with_windows_directory_traversal() {
+    let dir = tempdir().unwrap();
+    let server = server::http(|_req| async move {
+        hyper::Response::builder()
+            .header(
+                "Content-Disposition",
+                r#"attachment; filename="foo\baz\bar""#,
+            )
+            .body("file".into())
+            .unwrap()
+    });
+
+    get_command()
+        .args(["--download", &server.base_url()])
+        .current_dir(&dir)
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(dir.path().join("bar")).unwrap(), "file");
 }
 
 // TODO: test implicit download filenames
@@ -940,7 +1017,7 @@ fn digest_auth_with_redirection() {
         .stdout(indoc! {r#"
             GET /login_page HTTP/1.1
             Accept: */*
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Connection: keep-alive
             Host: http.mock
             User-Agent: xh/0.0.0 (test mode)
@@ -954,7 +1031,7 @@ fn digest_auth_with_redirection() {
 
             GET /login_page HTTP/1.1
             Accept: */*
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Authorization: Digest username="ahmed", realm="me@xh.com", nonce="e5051361f053723a807674177fc7022f", uri="/login_page", qop=auth, nc=00000001, cnonce="f2/wE4q74E6zIJEtWaHKaf5wv/H5QzzpXusqGemxURZJ", response="894fd5ee1dcc702df7e4a6abed37fd56", opaque="9dcf562038f1ec1c8d02f218ef0e7a4b", algorithm=MD5
             Connection: keep-alive
             Host: http.mock
@@ -969,7 +1046,7 @@ fn digest_auth_with_redirection() {
 
             GET /admin_page HTTP/1.1
             Accept: */*
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Connection: keep-alive
             Host: http.mock
             User-Agent: xh/0.0.0 (test mode)
@@ -1200,6 +1277,7 @@ fn proxy_multiple_valid_proxies() {
 
 // temporarily disabled for builds not using rustls
 #[cfg(all(feature = "online-tests", feature = "rustls"))]
+#[ignore = "endpoint is randomly timing out"]
 #[test]
 fn verify_default_yes() {
     use predicates::boolean::PredicateBooleanExt;
@@ -1215,6 +1293,7 @@ fn verify_default_yes() {
 
 // temporarily disabled for builds not using rustls
 #[cfg(all(feature = "online-tests", feature = "rustls"))]
+#[ignore = "endpoint is randomly timing out"]
 #[test]
 fn verify_explicit_yes() {
     use predicates::boolean::PredicateBooleanExt;
@@ -1229,6 +1308,7 @@ fn verify_explicit_yes() {
 }
 
 #[cfg(feature = "online-tests")]
+#[ignore = "endpoint is randomly timing out"]
 #[test]
 fn verify_no() {
     get_command()
@@ -1240,6 +1320,7 @@ fn verify_no() {
 }
 
 #[cfg(all(feature = "rustls", feature = "online-tests"))]
+#[ignore = "endpoint is randomly timing out"]
 #[test]
 fn verify_valid_file() {
     get_command()
@@ -1255,6 +1336,7 @@ fn verify_valid_file() {
 // This test may fail if https://github.com/seanmonstar/reqwest/issues/1260 is fixed
 // If that happens make sure to remove the warning, not just this test
 #[cfg(all(feature = "native-tls", feature = "online-tests"))]
+#[ignore = "endpoint is randomly timing out"]
 #[test]
 fn verify_valid_file_native_tls() {
     get_command()
@@ -1653,6 +1735,82 @@ fn body_from_raw() {
 }
 
 #[test]
+fn support_utf8_header_value() {
+    let server = server::http(|req| async move {
+        assert_eq!(req.headers()["hello"].as_bytes(), "你好".as_bytes());
+        hyper::Response::builder()
+            .header("hello", "你好呀")
+            .header("Date", "N/A")
+            .body("".into())
+            .unwrap()
+    });
+
+    get_command()
+        .args([&server.base_url(), "hello:你好"])
+        .assert()
+        .stdout(indoc! {r#"
+        HTTP/1.1 200 OK
+        Content-Length: 0
+        Date: N/A
+        Hello: "\xe4\xbd\xa0\xe5\xa5\xbd\xe5\x91\x80"
+
+
+        "#})
+        .success();
+}
+
+#[test]
+fn redirect_support_utf8_location() {
+    let server = server::http(|req| async move {
+        match req.uri().path() {
+            "/first_page" => hyper::Response::builder()
+                .status(302)
+                .header("Date", "N/A")
+                .header("Location", "/page二")
+                .body("redirecting...".into())
+                .unwrap(),
+            "/page%E4%BA%8C" => hyper::Response::builder()
+                .header("Date", "N/A")
+                .body("final destination".into())
+                .unwrap(),
+            _ => panic!("unknown path"),
+        }
+    });
+
+    get_command()
+        .args([&server.url("/first_page"), "--follow", "--verbose", "--all"])
+        .assert()
+        .stdout(indoc! {r#"
+            GET /first_page HTTP/1.1
+            Accept: */*
+            Accept-Encoding: gzip, deflate, br, zstd
+            Connection: keep-alive
+            Host: http.mock
+            User-Agent: xh/0.0.0 (test mode)
+
+            HTTP/1.1 302 Found
+            Content-Length: 14
+            Date: N/A
+            Location: "/page\xe4\xba\x8c"
+
+            redirecting...
+
+            GET /page%E4%BA%8C HTTP/1.1
+            Accept: */*
+            Accept-Encoding: gzip, deflate, br, zstd
+            Connection: keep-alive
+            Host: http.mock
+            User-Agent: xh/0.0.0 (test mode)
+
+            HTTP/1.1 200 OK
+            Content-Length: 17
+            Date: N/A
+
+            final destination
+        "#});
+}
+
+#[test]
 fn mixed_stdin_request_items() {
     redirecting_command()
         .args(["--offline", ":", "x=3"])
@@ -1763,6 +1921,33 @@ fn multipart_file_upload() {
         ))
         .assert()
         .success();
+}
+
+#[test]
+fn warn_for_filename_tag_on_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let filename = dir.path().join("input");
+    OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&filename)
+        .unwrap()
+        .write_all(b"Hello world\n")
+        .unwrap();
+
+    get_command()
+        .arg("--offline")
+        .arg(":")
+        .arg(format!(
+            "@{};filename=hello.txt",
+            filename.to_string_lossy()
+        ))
+        .assert()
+        .success()
+        .stderr(
+            "xh: warning: Ignoring ;filename= tag for single-file body. Consider --multipart.\n",
+        );
 }
 
 #[test]
@@ -2015,7 +2200,7 @@ fn can_unset_default_headers() {
         .stdout(indoc! {r#"
             GET / HTTP/1.1
             Accept: */*
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Connection: keep-alive
             Host: http.mock
 
@@ -2030,7 +2215,7 @@ fn can_unset_headers() {
         .stdout(indoc! {r#"
             GET / HTTP/1.1
             Accept: */*
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Connection: keep-alive
             Hello: world
             Host: http.mock
@@ -2047,7 +2232,7 @@ fn can_set_unset_header() {
         .stdout(indoc! {r#"
             GET / HTTP/1.1
             Accept: */*
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Connection: keep-alive
             Hello: world
             Host: http.mock
@@ -2780,7 +2965,7 @@ fn print_intermediate_requests_and_responses() {
         .stdout(indoc! {r#"
             GET /first_page HTTP/1.1
             Accept: */*
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Connection: keep-alive
             Host: http.mock
             User-Agent: xh/0.0.0 (test mode)
@@ -2794,7 +2979,7 @@ fn print_intermediate_requests_and_responses() {
 
             GET /second_page HTTP/1.1
             Accept: */*
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Connection: keep-alive
             Host: http.mock
             User-Agent: xh/0.0.0 (test mode)
@@ -2835,7 +3020,7 @@ fn history_print() {
         .stdout(indoc! {r#"
             GET /first_page HTTP/1.1
             Accept: */*
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Connection: keep-alive
             Host: http.mock
             User-Agent: xh/0.0.0 (test mode)
@@ -2847,7 +3032,7 @@ fn history_print() {
 
             GET /second_page HTTP/1.1
             Accept: */*
-            Accept-Encoding: gzip, deflate, br
+            Accept-Encoding: gzip, deflate, br, zstd
             Connection: keep-alive
             Host: http.mock
             User-Agent: xh/0.0.0 (test mode)
@@ -3379,6 +3564,31 @@ fn brotli() {
 }
 
 #[test]
+fn zstd() {
+    let server = server::http(|_req| async move {
+        let compressed_bytes = fs::read("./tests/fixtures/responses/hello_world.zst").unwrap();
+        hyper::Response::builder()
+            .header("date", "N/A")
+            .header("content-encoding", "zstd")
+            .body(compressed_bytes.into())
+            .unwrap()
+    });
+
+    get_command()
+        .arg(server.base_url())
+        .assert()
+        .stdout(indoc! {r#"
+            HTTP/1.1 200 OK
+            Content-Encoding: zstd
+            Content-Length: 25
+            Date: N/A
+
+            Hello world
+
+        "#});
+}
+
+#[test]
 fn empty_response_with_content_encoding() {
     let server = server::http(|_req| async move {
         hyper::Response::builder()
@@ -3564,7 +3774,7 @@ fn multiple_format_options_are_merged() {
     get_command()
         .arg("--format-options=json.indent:2,json.indent:8")
         .arg("--format-options=headers.sort:false")
-        .arg(&server.base_url())
+        .arg(server.base_url())
         .assert()
         .stdout(indoc! {r#"
             HTTP/1.1 200 OK
