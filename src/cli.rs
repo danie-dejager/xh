@@ -173,6 +173,8 @@ Example: --print=Hb"
     pub history_print: Option<Print>,
 
     /// Do not print to stdout or stderr.
+    ///
+    ///  Using quiet twice i.e. -qq will suppress warnings as well.
     #[clap(short = 'q', long, action = ArgAction::Count)]
     pub quiet: u8,
 
@@ -1069,6 +1071,10 @@ impl Theme {
             Theme::Monokai => "monokai",
             Theme::Fruity => "fruity",
         }
+    }
+
+    pub(crate) fn as_syntect_theme(&self) -> &'static syntect::highlighting::Theme {
+        &crate::formatting::THEMES.themes[self.as_str()]
     }
 }
 
