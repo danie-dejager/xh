@@ -45,7 +45,8 @@ module completions {
     --history-print(-P): string # The same as --print but applies only to intermediary requests/responses
     --quiet(-q)               # Do not print to stdout or stderr
     --stream(-S)              # Always stream the response body
-    --output(-o): string      # Save output to FILE instead of stdout
+    --compress(-x)            # Content compressed (encoded) with Deflate algorithm
+    --output(-o): path        # Save output to FILE instead of stdout
     --download(-d)            # Download the body to a file instead of printing it
     --continue(-c)            # Resume an interrupted download. Requires --download and --output
     --session: string         # Create, or reuse and update a session
@@ -61,8 +62,8 @@ module completions {
     --timeout: string         # Connection timeout of the request
     --proxy: string           # Use a proxy for a protocol. For example: --proxy https:http://proxy.host:8080
     --verify: string          # If "no", skip SSL verification. If a file path, use it as a CA bundle
-    --cert: string            # Use a client side certificate for SSL
-    --cert-key: string        # A private key file to use with --cert
+    --cert: path              # Use a client side certificate for SSL
+    --cert-key: path          # A private key file to use with --cert
     --ssl: string@"nu-complete xh ssl" # Force a particular TLS version
     --native-tls              # Use the system TLS library instead of rustls (if enabled at compile time)
     --default-scheme: string  # The default scheme to use if not specified in the URL
@@ -77,7 +78,7 @@ module completions {
     --curl-long               # Use the long versions of curl's flags
     --generate: string@"nu-complete xh generate" # Generate shell completions or man pages
     --help                    # Print help
-    raw_method_or_url?: string # The request URL, preceded by an optional HTTP method
+    raw_method_or_url: string # The request URL, preceded by an optional HTTP method
     ...raw_rest_args: string  # Optional key-value pairs to be included in the request.
     --no-json
     --no-form
@@ -98,6 +99,7 @@ module completions {
     --no-history-print
     --no-quiet
     --no-stream
+    --no-compress
     --no-output
     --no-download
     --no-continue
