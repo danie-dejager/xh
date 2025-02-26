@@ -28,6 +28,8 @@ as much as possible of HTTPie's excellent design, with  a focus on improved perf
 # Install Rust using curl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 export PATH="$PATH:$HOME/.cargo/bin"
+rustup install 1.84.1
+rustup default 1.84.1
 cargo build --release --locked
 strip --strip-all target/release/%{name}
 # Install manpages
@@ -42,6 +44,8 @@ gzip doc/%{name}.1
 # Install Rust using curl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 export PATH="$PATH:$HOME/.cargo/bin"
+rustup install 1.84.1
+rustup default 1.84.1
 RUST_BACKTRACE=1 cargo test --release --locked
 
 %install
