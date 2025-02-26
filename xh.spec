@@ -1,6 +1,6 @@
 %define name xh
 %define version 0.24.0
-%define release 1%{?dist}
+%define release 2%{?dist}
 
 Summary:  Friendly and fast tool for sending HTTP requests
 Name:     %{name}
@@ -28,7 +28,7 @@ as much as possible of HTTPie's excellent design, with  a focus on improved perf
 # Install Rust using curl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 export PATH="$PATH:$HOME/.cargo/bin"
-cargo build --release
+cargo build --release --locked
 strip --strip-all target/release/%{name}
 # Install manpages
 mkdir -p %{buildroot}%{_mandir}/man1/
@@ -37,6 +37,12 @@ mkdir -p %{buildroot}%{_sysconfdir}
 \rm completions/_%{name}.ps1
 mkdir -p %{buildroot}%{_bindir}/
 gzip doc/%{name}.1
+
+%check
+# Install Rust using curl
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+export PATH="$PATH:$HOME/.cargo/bin"
+RUST_BACKTRACE=1 cargo test --release --locked
 
 %install
 install -Dpm 0755 target/release/%{name} %{buildroot}%{_bindir}/%{name}
@@ -60,6 +66,8 @@ install -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 %{_mandir}/man1/%{name}.1.gz
 
 %changelog
+* Wed Feb 26 2025 - Danie de Jager - 0.24.0-2
+- Add testing
 * Wed Feb 26 2025 - Danie de Jager - 0.24.0-1
 * Thu Feb 6 2025 - Danie de Jager - 0.23.1-2
 * Fri Jan 10 2025 - Danie de Jager - 0.23.1-1
