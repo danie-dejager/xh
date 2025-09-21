@@ -223,7 +223,7 @@ Example: --print=Hb"
     #[clap(long, value_name = "FILE")]
     pub session: Option<OsString>,
 
-    /// Create or read a session without updating it form the request/response exchange.
+    /// Create or read a session without updating it from the request/response exchange.
     #[clap(long, value_name = "FILE", conflicts_with = "session")]
     pub session_read_only: Option<OsString>,
 
@@ -358,6 +358,12 @@ Example: --print=Hb"
     #[clap(short = '6', long)]
     pub ipv6: bool,
 
+    /// Connect using a Unix domain socket.
+    ///
+    /// Example: xh :/index.html --unix-socket=/var/run/temp.sock
+    #[clap(long, value_name = "FILE")]
+    pub unix_socket: Option<PathBuf>,
+
     /// Do not attempt to read stdin.
     ///
     /// This disables the default behaviour of reading the request body from stdin
@@ -386,13 +392,13 @@ Example: --print=Hb"
         long_help = "\
 Generate shell completions or man pages. Possible values are:
 
-    complete-bash
-    complete-elvish
-    complete-fish
-    complete-nushell
-    complete-powershell
-    complete-zsh
-    man
+    complete-bash         Generate completions for bash
+    complete-elvish       Generate completions for elvish
+    complete-fish         Generage completions for fish
+    complete-nushell      Generate completions for nushell
+    complete-powershell   Generate completions for powershell
+    complete-zsh          Generate completions for zsh
+    man                   Generate manual page in roff format
 
 Example: xh --generate=complete-bash > xh.bash",
         conflicts_with = "raw_method_or_url"
@@ -424,8 +430,7 @@ Example: xh --generate=complete-bash > xh.bash",
     ///         Add a query string to the URL.
     ///
     ///     key=value
-    ///         Add a JSON property (--json) or form field (--form) to
-    ///         the request body.
+    ///         Add a JSON property (--json) or form field (--form) to the request body.
     ///
     ///     key:=value
     ///         Add a field with a literal JSON value to the request body.
@@ -435,8 +440,7 @@ Example: xh --generate=complete-bash > xh.bash",
     ///     key@filename
     ///         Upload a file (requires --form or --multipart).
     ///
-    ///         To set the filename and mimetype, ";type=" and
-    ///         ";filename=" can be used respectively.
+    ///         To set the filename and mimetype, ";type=" and ";filename=" can be used respectively.
     ///
     ///         Example: "pfp@ra.jpg;type=image/jpeg;filename=profile.jpg"
     ///
@@ -456,8 +460,7 @@ Example: xh --generate=complete-bash > xh.bash",
     ///
     /// A backslash can be used to escape special characters, e.g. "weird\:key=value".
     ///
-    /// To construct a complex JSON object, the REQUEST_ITEM's key can be set to a JSON path instead of a field name.
-    /// For more information on this syntax, refer to https://httpie.io/docs/cli/nested-json.
+    /// To construct a complex JSON object, the REQUEST_ITEM's key can be set to a JSON path instead of a field name. For more information on this syntax, refer to https://httpie.io/docs/cli/nested-json.
     #[clap(value_name = "REQUEST_ITEM", verbatim_doc_comment)]
     raw_rest_args: Vec<String>,
 
@@ -1216,7 +1219,7 @@ pub enum Generate {
 /// BE instead.
 fn parse_encoding(encoding: &str) -> anyhow::Result<&'static Encoding> {
     let normalized_encoding = encoding.to_lowercase().replace(
-        |c: char| (!c.is_alphanumeric() && c != '_' && c != '-' && c != ':'),
+        |c: char| !c.is_alphanumeric() && c != '_' && c != '-' && c != ':',
         "",
     );
 
