@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -241,7 +241,7 @@ impl Session {
                     let (username, password) = auth::parse_auth(raw_auth, "")?;
                     Ok(Some(auth::Auth::Digest(
                         username,
-                        password.unwrap_or_else(|| "".into()),
+                        password.unwrap_or_default(),
                     )))
                 }
                 "bearer" => Ok(Some(auth::Auth::Bearer(raw_auth.into()))),

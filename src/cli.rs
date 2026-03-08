@@ -10,13 +10,13 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context};
-use clap::builder::styling::{AnsiColor, Effects};
+use anyhow::{Context, anyhow};
 use clap::builder::Styles;
+use clap::builder::styling::{AnsiColor, Effects};
 use clap::{self, ArgAction, FromArgMatches, ValueEnum};
 use encoding_rs::Encoding;
 use regex_lite::Regex;
-use reqwest::{tls, Method, Url};
+use reqwest::{Method, Url, tls};
 use serde::Deserialize;
 
 use crate::buffer::Buffer;
@@ -105,9 +105,11 @@ Set output formatting options. Supported option are:
 
     json.indent:<NUM>
     json.format:<true|false>
+    xml.indent:<NUM>
+    xml.format:<true|false>
     headers.sort:<true|false>
 
-Example: --format-options=json.indent:2,headers.sort:false"
+Example: --format-options=json.indent:2,xml.indent:2,headers.sort:false"
     )]
     pub format_options: Vec<FormatOptions>,
 
@@ -262,6 +264,9 @@ Example: --print=Hb"
     /// Do not use credentials from .netrc
     #[clap(long)]
     pub ignore_netrc: bool,
+
+    #[command(flatten)]
+    pub m_sig: MessageSignature,
 
     /// Construct HTTP requests without sending them anywhere.
     #[clap(long)]
@@ -804,6 +809,138 @@ pub enum AuthType {
     Digest,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct MessageSignature {
+    /// Message signature key identifier (RFC 9421).
+    #[arg(
+        long = "unstable-m-sig-id",
+        value_name = "KEY_ID",
+        requires = "m_sig_key",
+        hide = cfg!(not(feature = "http-message-signatures"))
+    )]
+    pub m_sig_id: Option<String>,
+
+    /// Message signature key material (RFC 9421).
+    ///
+    /// Can be a raw string or a file path starting with @.
+    #[arg(
+        long = "unstable-m-sig-key",
+        value_name = "KEY",
+        requires = "m_sig_id",
+        hide = cfg!(not(feature = "http-message-signatures"))
+    )]
+    pub m_sig_key: Option<String>,
+
+    /// Message signature algorithm (RFC 9421).
+    ///
+    /// Supported algorithms: hmac-sha256, ed25519, ecdsa-p256-sha256,
+    /// ecdsa-p384-sha384, rsa-v1_5-sha256, rsa-pss-sha512.
+    #[arg(
+        long = "unstable-m-sig-alg",
+        value_name = "ALG",
+        hide_possible_values = true,
+        requires = "m_sig_key",
+        hide = cfg!(not(feature = "http-message-signatures"))
+    )]
+    pub m_sig_alg: Option<MessageSignatureAlgorithm>,
+
+    /// Comma-separated list of message signature components (RFC 9421).
+    ///
+    /// If not specified, defaults to "@method, @authority, @target-uri".
+    /// This flag can be passed multiple times; values are appended in order.
+    /// "@query-params" is a shorthand for all query parameters.
+    /// "content-digest" is included if there's a body.
+    ///
+    /// Example: "@method,@path,content-digest"
+    #[arg(
+        long = "unstable-m-sig-comp",
+        value_name = "COMPONENTS",
+        hide = cfg!(not(feature = "http-message-signatures"))
+    )]
+    pub m_sig_comp: Vec<MessageSignatureComponents>,
+}
+
+#[allow(unused)]
+impl MessageSignature {
+    pub fn has_key_pair(&self) -> bool {
+        self.m_sig_id.is_some() && self.m_sig_key.is_some()
+    }
+
+    pub fn key_pair(&self) -> Option<(&str, &str)> {
+        Some((self.m_sig_id.as_deref()?, self.m_sig_key.as_deref()?))
+    }
+
+    pub fn algorithm(&self) -> Option<MessageSignatureAlgorithm> {
+        self.m_sig_alg
+    }
+
+    pub fn has_components(&self) -> bool {
+        self.m_sig_comp
+            .iter()
+            .any(|components| !components.0.is_empty())
+    }
+
+    #[cfg(feature = "http-message-signatures")]
+    pub fn flattened_components(&self) -> Vec<String> {
+        self.m_sig_comp
+            .iter()
+            .flat_map(|components| components.0.iter().cloned())
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MessageSignatureComponents(pub Vec<String>);
+
+impl FromStr for MessageSignatureComponents {
+    type Err = std::convert::Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let components = s
+            .split(',')
+            .map(|s| {
+                let component = s.trim();
+                if let Some(idx) = component.find(';') {
+                    let (name, params) = component.split_at(idx);
+                    format!("{}{}", name.to_lowercase(), params)
+                } else {
+                    component.to_lowercase()
+                }
+            })
+            .collect();
+        Ok(MessageSignatureComponents(components))
+    }
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageSignatureAlgorithm {
+    #[clap(name = "hmac-sha256")]
+    HmacSha256,
+    #[clap(name = "ed25519")]
+    Ed25519,
+    #[clap(name = "ecdsa-p256-sha256")]
+    EcdsaP256Sha256,
+    #[clap(name = "ecdsa-p384-sha384")]
+    EcdsaP384Sha384,
+    #[clap(name = "rsa-v1_5-sha256")]
+    RsaV15Sha256,
+    #[clap(name = "rsa-pss-sha512")]
+    RsaPssSha512,
+}
+
+#[cfg(feature = "http-message-signatures")]
+impl From<MessageSignatureAlgorithm> for httpsig_hyper::prelude::AlgorithmName {
+    fn from(value: MessageSignatureAlgorithm) -> Self {
+        match value {
+            MessageSignatureAlgorithm::HmacSha256 => Self::HmacSha256,
+            MessageSignatureAlgorithm::Ed25519 => Self::Ed25519,
+            MessageSignatureAlgorithm::EcdsaP256Sha256 => Self::EcdsaP256Sha256,
+            MessageSignatureAlgorithm::EcdsaP384Sha384 => Self::EcdsaP384Sha384,
+            MessageSignatureAlgorithm::RsaV15Sha256 => Self::RsaV1_5Sha256,
+            MessageSignatureAlgorithm::RsaPssSha512 => Self::RsaPssSha512,
+        }
+    }
+}
+
 #[derive(ValueEnum, Debug, Clone)]
 pub enum TlsVersion {
     // ssl2.3 is not a real version but it's how HTTPie spells "auto"
@@ -857,6 +994,8 @@ impl Pretty {
 pub struct FormatOptions {
     pub json_indent: Option<usize>,
     pub json_format: Option<bool>,
+    pub xml_indent: Option<usize>,
+    pub xml_format: Option<bool>,
     pub headers_sort: Option<bool>,
 }
 
@@ -864,6 +1003,8 @@ impl FormatOptions {
     pub fn merge(mut self, other: &Self) -> Self {
         self.json_indent = other.json_indent.or(self.json_indent);
         self.json_format = other.json_format.or(self.json_format);
+        self.xml_indent = other.xml_indent.or(self.xml_indent);
+        self.xml_format = other.xml_format.or(self.xml_format);
         self.headers_sort = other.headers_sort.or(self.headers_sort);
         self
     }
@@ -891,7 +1032,13 @@ impl FromStr for FormatOptions {
                 "headers.sort" => {
                     format_options.headers_sort = Some(value.parse().with_context(value_error)?);
                 }
-                "json.sort_keys" | "xml.format" | "xml.indent" => {
+                "xml.indent" => {
+                    format_options.xml_indent = Some(value.parse().with_context(value_error)?);
+                }
+                "xml.format" => {
+                    format_options.xml_format = Some(value.parse().with_context(value_error)?);
+                }
+                "json.sort_keys" => {
                     return Err(anyhow!("Unsupported option '{key}'"));
                 }
                 _ => {
@@ -1680,7 +1827,7 @@ mod tests {
             "json.format:ffalse",
             // unsupported options
             "json.sort_keys:true",
-            "xml.format:false",
+            // invalid xml option values
             "xml.indent:false",
             // invalid options
             "toml.format:true",
@@ -1690,10 +1837,15 @@ mod tests {
             assert!(FormatOptions::from_str(format_option).is_err());
         }
 
-        assert!(FormatOptions::from_str(
-            "json.indent:8,json.format:true,headers.sort:false,JSON.FORMAT:TRUE"
-        )
-        .is_ok());
+        assert!(
+            FormatOptions::from_str(
+                "json.indent:8,json.format:true,headers.sort:false,JSON.FORMAT:TRUE"
+            )
+            .is_ok()
+        );
+
+        assert!(FormatOptions::from_str("xml.format:true,xml.indent:4").is_ok());
+        assert!(FormatOptions::from_str("xml.format:false").is_ok());
     }
 
     #[test]
@@ -1705,10 +1857,50 @@ mod tests {
             format_option_one.merge(&format_option_two),
             FormatOptions {
                 json_indent: Some(2),
+                json_format: None,
+                xml_indent: None,
+                xml_format: None,
                 headers_sort: Some(false),
-                json_format: None
             }
         )
+    }
+
+    #[test]
+    fn parse_repeated_message_signature_components() {
+        let cli = parse([
+            "--unstable-m-sig-id=my-key",
+            "--unstable-m-sig-key=secret",
+            "--unstable-m-sig-comp=@method,@path",
+            "--unstable-m-sig-comp=date",
+            "get",
+            "example.org",
+        ])
+        .unwrap();
+
+        assert_eq!(cli.m_sig.m_sig_comp.len(), 2);
+        assert_eq!(cli.m_sig.m_sig_comp[0].0, vec!["@method", "@path"]);
+        assert_eq!(cli.m_sig.m_sig_comp[1].0, vec!["date"]);
+    }
+
+    #[test]
+    fn parse_message_signature_algorithm() {
+        let cli = parse([
+            "--unstable-m-sig-id=my-key",
+            "--unstable-m-sig-key=secret",
+            "--unstable-m-sig-alg=rsa-v1_5-sha256",
+            "get",
+            "example.org",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            cli.m_sig.m_sig_alg,
+            Some(MessageSignatureAlgorithm::RsaV15Sha256)
+        );
+        assert_eq!(
+            cli.m_sig.algorithm(),
+            Some(MessageSignatureAlgorithm::RsaV15Sha256)
+        );
     }
 
     #[test]
