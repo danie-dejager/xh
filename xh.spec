@@ -1,6 +1,6 @@
 %define name xh
-%define version 0.26.2
-%define release 2%{?dist}
+%define version 0.26.3
+%define release 1%{?dist}
 
 Summary:  Friendly and fast tool for sending HTTP requests
 Name:     %{name}
@@ -72,6 +72,7 @@ install -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 %{_mandir}/man1/%{name}.1.gz
 
 %changelog
+* Wed Oct 21 2026 - Danie de Jager - 0.26.3-1
 * Sun Sep 27 2026 - Danie de Jager - 0.26.2-2
 * Sun Jul 26 2026 - Danie de Jager - 0.26.2-1
 * Thu Jul 16 2026 - Danie de Jager - 0.26.1-1
